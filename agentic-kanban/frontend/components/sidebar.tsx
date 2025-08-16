@@ -7,9 +7,9 @@ import { Button } from "@/components/ui/button"
 import { Kanban, Settings, MessageSquare } from "lucide-react"
 
 const navigation = [
-  { name: "Chat", href: "/", icon: MessageSquare },
+  // { name: "Chat", href: "/", icon: MessageSquare },
   { name: "Tasks", href: "/tasks", icon: Kanban },
-  { name: "Policies", href: "/policies", icon: Settings },
+  // { name: "Policies", href: "/policies", icon: Settings },
 ]
 
 export function Sidebar() {
