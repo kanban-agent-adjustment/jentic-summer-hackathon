@@ -1,178 +1,149 @@
 # Agentic Kanban Backend
 
-A FastAPI-based backend for managing kanban board cards using ChromaDB for storage.
+A FastAPI-based backend for managing kanban board cards using ChromaDB for storage. **Now with dynamic schema loading!**
 
-## Features
+## ✨ **Key Features**
 
-- **PUT /api/cards** - Add multiple cards to the database
-- **GET /api/cards** - Retrieve all cards from the database
-- **PUT /api/cards/{card_id}** - Update a specific card (status, title, description, etc.)
-- **GET /api/cards/{card_id}** - Get a specific card by ID
-- **DELETE /api/cards/{card_id}** - Delete a specific card
+- **🔄 Dynamic Schema Loading** - Automatically reads from `card.schema.json` and generates models
+- **📝 Schema Hot-Reload** - Reload schema changes without restarting the server
+- **🗄️ ChromaDB Storage** - Persistent, fast vector-based storage
+- **🔍 Schema Information** - Get current schema details via API
+- **✅ Automatic Validation** - Models automatically validate against your schema
 
-## Setup
+## 🚀 **Your 3 Required APIs:**
 
-### 1. Install Dependencies
+1. **`PUT /api/cards`** - Add multiple cards to the database
+2. **`GET /api/cards`** - Retrieve all cards from the database  
+3. **`PUT /api/cards/{card_id}`** - Update card status and other fields
+
+## 🆕 **New Schema Management APIs:**
+
+4. **`GET /api/schema`** - Get current schema information
+5. **`POST /api/schema/reload`** - Reload schema and regenerate models
+
+## 🏗️ **How Dynamic Schema Works**
+
+The backend automatically:
+1. **Reads** your `card.schema.json` file on startup
+2. **Generates** Pydantic models dynamically from the schema
+3. **Validates** all incoming data against your current schema
+4. **Updates** models when you call the reload endpoint
+
+**No more manual model updates when you change the schema!**
+
+## 📁 **Setup & Running:**
+
+1. **Install dependencies:**
+   ```bash
+   cd jentic-summer-hackathon/agentic-kanban/backend
+   pip install -r requirements.txt
+   ```
+
+2. **Start the server:**
+   ```bash
+   python run.py
+   # or
+   python main.py
+   ```
+
+3. **Access API docs:**
+   - Swagger UI: http://localhost:8000/docs
+   - ReDoc: http://localhost:8000/redoc
+
+## 🧪 **Testing:**
+
+Run the test script to verify everything works:
+```bash
+python test_api.py
+```
+
+## 🔄 **Schema Hot-Reload Workflow:**
+
+1. **Edit** your `card.schema.json` file
+2. **Call** `POST /api/schema/reload` 
+3. **Models automatically regenerate** with new schema
+4. **No server restart needed!**
+
+## 📊 **Schema Information Endpoint:**
 
 ```bash
-pip install -r requirements.txt
-```
-
-### 2. Run the Backend
-
-```bash
-python main.py
-```
-
-The server will start on `http://localhost:8000`
-
-### 3. Access API Documentation
-
-- **Swagger UI**: `http://localhost:8000/docs`
-- **ReDoc**: `http://localhost:8000/redoc`
-
-## API Endpoints
-
-### PUT /api/cards
-Add multiple cards to the database.
-
-**Request Body:**
-```json
-{
-  "cards": [
-    {
-      "id": "card-1",
-      "title": "Implement User Authentication",
-      "description": "Add JWT-based authentication system",
-      "status": "in-progress",
-      "order": 1,
-      "tags": ["backend", "security"],
-      "createdAt": "2024-01-15T10:00:00Z",
-      "updatedAt": "2024-01-15T10:00:00Z"
-    }
-  ]
-}
+curl http://localhost:8000/api/schema
 ```
 
 **Response:**
 ```json
 {
   "success": true,
-  "message": "Successfully added 1 cards",
-  "data": null
-}
-```
-
-### GET /api/cards
-Retrieve all cards from the database.
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Successfully retrieved 2 cards",
-  "data": [
-    {
-      "id": "card-1",
-      "title": "Implement User Authentication",
-      "description": "Add JWT-based authentication system",
-      "status": "in-progress",
-      "order": 1,
-      "tags": ["backend", "security"],
-      "createdAt": "2024-01-15T10:00:00Z",
-      "updatedAt": "2024-01-15T10:00:00Z",
-      "completedAt": null
-    }
-  ]
-}
-```
-
-### PUT /api/cards/{card_id}
-Update a specific card. Only provide the fields you want to update.
-
-**Request Body:**
-```json
-{
-  "status": "done",
-  "completedAt": "2024-01-16T15:30:00Z"
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Card updated successfully",
+  "message": "Schema information retrieved successfully",
   "data": {
-    "id": "card-1",
-    "title": "Implement User Authentication",
-    "description": "Add JWT-based authentication system",
-    "status": "done",
-    "order": 1,
-    "tags": ["backend", "security"],
-    "createdAt": "2024-01-15T10:00:00Z",
-    "updatedAt": "2024-01-16T15:30:00Z",
-    "completedAt": "2024-01-16T15:30:00Z"
+    "title": "CardList",
+    "description": "Schema for a list of cards with metadata and status",
+    "card_properties": ["id", "title", "description", "status", "order", "tags", "createdAt", "updatedAt", "completedAt"],
+    "required_fields": ["id", "title", "description", "status", "order", "tags", "createdAt", "updatedAt"],
+    "status_values": ["research", "in-progress", "done", "blocked", "planned"],
+    "schema_file": "/path/to/card.schema.json",
+    "last_modified": 1705123456.789
   }
 }
 ```
 
-## Card Status Values
+## 🗄️ **Database Features:**
 
-- `research` - Card is in research phase
-- `in-progress` - Card is currently being worked on
-- `done` - Card is completed
-- `blocked` - Card is blocked and cannot proceed
-- `planned` - Card is planned but not started
+- **ChromaDB** provides persistent storage (data survives restarts)
+- **Automatic ID generation** and timestamp management
+- **Fast retrieval** and updates
+- **Data stored** in `./chroma_db` directory
+- **Schema-aware** - automatically handles new/removed fields
 
-## Database
+## 🔧 **Additional Features:**
 
-The backend uses **ChromaDB** as the database, which provides:
-- Persistent storage (data survives server restarts)
-- Fast vector-based retrieval
-- Simple document storage with metadata
-- Automatic ID generation and management
+- **CORS enabled** for frontend integration
+- **Error handling** with proper HTTP status codes
+- **Data validation** using dynamically generated Pydantic models
+- **Automatic timestamps** for created/updated fields
+- **Status enum** automatically generated from your schema
 
-Data is stored in the `./chroma_db` directory by default.
+## 📁 **Project Structure**
 
-## Error Handling
-
-The API returns appropriate HTTP status codes:
-- `200` - Success
-- `404` - Card not found
-- `500` - Internal server error
-
-All error responses include a descriptive message.
-
-## Development
-
-### Project Structure
 ```
 backend/
-├── main.py          # FastAPI application and endpoints
-├── models.py        # Pydantic models for data validation
-├── database.py      # ChromaDB integration and operations
-├── requirements.txt # Python dependencies
-└── README.md        # This file
+├── main.py              # FastAPI application and endpoints
+├── models.py            # Dynamic Pydantic model generator
+├── schema_loader.py     # JSON schema file loader and parser
+├── database.py          # ChromaDB integration and operations
+├── requirements.txt     # Python dependencies
+├── test_api.py          # Comprehensive API testing
+├── run.py               # Startup script
+└── README.md            # This file
 ```
 
-### Adding New Endpoints
+## 🔄 **Development Workflow**
 
-1. Add the endpoint function in `main.py`
-2. Define request/response models in `models.py` if needed
-3. Add database operations in `database.py` if needed
-4. Update this README with the new endpoint documentation
+1. **Edit** `../card.schema.json` (add/remove fields, change types, etc.)
+2. **Call** `POST /api/schema/reload` to regenerate models
+3. **Test** with your updated schema
+4. **No code changes needed!**
 
-### Testing
+## 🚨 **Important Notes**
 
-You can test the API using:
-- The built-in Swagger UI at `/docs`
-- Tools like Postman or curl
-- The frontend application
+- **Schema file path**: The backend looks for `../card.schema.json` relative to the backend directory
+- **Hot reload**: Models are regenerated in memory, no server restart needed
+- **Backward compatibility**: Existing data in ChromaDB will work with new schemas
+- **Validation**: All incoming data is automatically validated against current schema
 
-## Example Usage with curl
+## 🧪 **Example Usage with curl**
 
-### Add cards
+### Get current schema info
+```bash
+curl "http://localhost:8000/api/schema"
+```
+
+### Reload schema after changes
+```bash
+curl -X POST "http://localhost:8000/api/schema/reload"
+```
+
+### Add cards (automatically validated against current schema)
 ```bash
 curl -X POST "http://localhost:8000/api/cards" \
   -H "Content-Type: application/json" \
@@ -203,3 +174,14 @@ curl -X PUT "http://localhost:8000/api/cards/task-1" \
   -H "Content-Type: application/json" \
   -d '{"status": "in-progress"}'
 ```
+
+## 🎯 **Benefits of Dynamic Schema**
+
+- **🔄 Zero downtime** when updating schema
+- **📝 Single source of truth** - your JSON schema file
+- **✅ Automatic validation** - no manual model updates
+- **🚀 Faster development** - change schema, reload, test immediately
+- **🔄 Live updates** - frontend can query current schema structure
+- **🛡️ Type safety** - Pydantic models automatically generated with correct types
+
+The backend is now **production-ready** with **zero-maintenance schema management**! 🎉

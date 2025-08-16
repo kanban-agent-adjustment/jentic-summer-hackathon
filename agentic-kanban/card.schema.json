@@ -51,7 +51,6 @@
             "description",
             "status",
             "order",
-            "tags",
             "createdAt",
             "updatedAt"
           ],
