@@ -1,5 +1,5 @@
 # Arazzo Runner - main workflow execution engine
-arazzo-runner>=0.1.0
+arazzo-runner
 
 # YAML processing
 pyyaml>=6.0.1
