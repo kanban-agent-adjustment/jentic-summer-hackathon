@@ -1,8 +1,8 @@
 # Standard Agent framework
-standard-agent>=0.1.0
+standard-agent
 
 # Jentic SDK for API access
-jentic>=0.1.0
+jentic
 
 # Environment management
 python-dotenv>=1.0.0
