@@ -7,11 +7,26 @@ import { Sidebar } from "@/components/sidebar"
 import { LoadingColumn, LoadingSpinner } from "@/components/ui/loading-spinner"
 import { useCards, useOptimisticUpdateCard } from "@/hooks/use-cards"
 import { useInitializeData } from "@/hooks/use-initialize-data"
+import { useDeleteAllCards } from "@/hooks/use-delete-all-cards"
 import type { Card as TaskCard } from "@/lib/api"
 import { toast, Toaster } from "sonner"
 import { ApiStatus } from "@/components/api-status"
 import { Button } from "@/components/ui/button"
-import { Plus } from "lucide-react"
+import { Plus, Trash2, Home, Eye } from "lucide-react"
+import { TaskDetailDialog } from "@/components/task-detail-dialog"
+import { useState } from "react"
+import { useRouter } from "next/navigation"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 
 const statusColumns = {
   research: { title: "Research", color: "bg-yellow-100 border-yellow-300 dark:bg-yellow-900/20" },
@@ -25,6 +40,12 @@ export default function TaskManagement() {
   const { data: tasks = [], isLoading, error } = useCards()
   const updateCardMutation = useOptimisticUpdateCard()
   const initializeDataMutation = useInitializeData()
+  const deleteAllCardsMutation = useDeleteAllCards()
+  const router = useRouter()
+  
+  // State for task detail dialog
+  const [selectedTask, setSelectedTask] = useState<TaskCard | null>(null)
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false)
 
   const handleDragEnd = (result: any) => {
     if (!result.destination) return
@@ -54,6 +75,15 @@ export default function TaskManagement() {
 
   const getTasksByStatus = (status: TaskCard["status"]) => tasks.filter((task) => task.status === status)
 
+  const handleTaskClick = (task: TaskCard) => {
+    setSelectedTask(task)
+    setIsDetailDialogOpen(true)
+  }
+
+  const handleGoHome = () => {
+    router.push('/')
+  }
+
   // Handle empty state
   if (!isLoading && !error && tasks.length === 0) {
     return (
@@ -69,7 +99,18 @@ export default function TaskManagement() {
                     Organize and track your tasks with our intelligent Kanban board
                   </p>
                 </div>
-                <ApiStatus />
+                <div className="flex items-center gap-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleGoHome}
+                    className="gap-2"
+                  >
+                    <Home className="w-4 h-4" />
+                    Back to Home
+                  </Button>
+                  <ApiStatus />
+                </div>
               </div>
             </header>
             <div className="flex-1 flex items-center justify-center p-6">
@@ -125,7 +166,18 @@ export default function TaskManagement() {
                     Organize and track your tasks with our intelligent Kanban board
                   </p>
                 </div>
-                <ApiStatus />
+                <div className="flex items-center gap-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleGoHome}
+                    className="gap-2"
+                  >
+                    <Home className="w-4 h-4" />
+                    Back to Home
+                  </Button>
+                  <ApiStatus />
+                </div>
               </div>
             </header>
             <div className="flex-1 overflow-auto p-6">
@@ -156,7 +208,18 @@ export default function TaskManagement() {
                     Organize and track your tasks with our intelligent Kanban board
                   </p>
                 </div>
-                <ApiStatus />
+                <div className="flex items-center gap-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleGoHome}
+                    className="gap-2"
+                  >
+                    <Home className="w-4 h-4" />
+                    Back to Home
+                  </Button>
+                  <ApiStatus />
+                </div>
               </div>
             </header>
             <div className="flex-1 flex items-center justify-center p-6">
@@ -202,7 +265,63 @@ export default function TaskManagement() {
                   </div>
                 )}
               </div>
-              <ApiStatus />
+              <div className="flex items-center gap-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleGoHome}
+                  className="gap-2"
+                >
+                  <Home className="w-4 h-4" />
+                  Back to Home
+                </Button>
+                {tasks.length > 0 && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        className="gap-2"
+                        disabled={deleteAllCardsMutation.isPending}
+                      >
+                        {deleteAllCardsMutation.isPending ? (
+                          <LoadingSpinner size="sm" />
+                        ) : (
+                          <Trash2 className="w-4 h-4" />
+                        )}
+                        Delete All Tasks
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This action cannot be undone. This will permanently delete all {tasks.length} tasks from your kanban board.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => {
+                            deleteAllCardsMutation.mutate(undefined, {
+                              onSuccess: (response) => {
+                                toast.success(response.message || 'All tasks deleted successfully!')
+                              },
+                              onError: (error) => {
+                                toast.error('Failed to delete tasks: ' + (error instanceof Error ? error.message : 'Unknown error'))
+                              },
+                            })
+                          }}
+                          className="bg-red-600 hover:bg-red-700"
+                        >
+                          Delete All Tasks
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
+                <ApiStatus />
+              </div>
             </div>
           </header>
 
@@ -233,16 +352,37 @@ export default function TaskManagement() {
                                 <Card
                                   ref={provided.innerRef}
                                   {...provided.draggableProps}
-                                  {...provided.dragHandleProps}
-                                  className={`cursor-grab active:cursor-grabbing transition-shadow ${
-                                    snapshot.isDragging ? "shadow-lg rotate-2" : "hover:shadow-md"
+                                  className={`cursor-pointer hover:shadow-md transition-shadow relative ${
+                                    snapshot.isDragging ? "shadow-lg rotate-2" : ""
                                   }`}
+                                  onClick={() => handleTaskClick(task)}
                                 >
-                                  <CardHeader className="pb-3">
+                                  <div 
+                                    {...provided.dragHandleProps} 
+                                    className="absolute top-2 right-2 p-1 cursor-grab active:cursor-grabbing opacity-30 hover:opacity-60 transition-opacity z-10"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <div className="w-4 h-4 grid grid-cols-2 gap-0.5">
+                                      <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
+                                      <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
+                                      <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
+                                      <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
+                                    </div>
+                                  </div>
+                                  <CardHeader className="pb-3 pr-8">
                                     <CardTitle className="text-sm font-medium">{task.title}</CardTitle>
                                   </CardHeader>
                                   <CardContent className="pt-0">
-                                    <CardDescription className="text-xs mb-3">{task.description}</CardDescription>
+                                    <CardDescription 
+                                      className="text-xs mb-3 overflow-hidden"
+                                      style={{
+                                        display: '-webkit-box',
+                                        WebkitLineClamp: 3,
+                                        WebkitBoxOrient: 'vertical',
+                                      }}
+                                    >
+                                      {task.description}
+                                    </CardDescription>
                                     {task.tags && task.tags.length > 0 && (
                                       <div className="flex flex-wrap gap-1">
                                         {task.tags.map((tag) => (
@@ -269,6 +409,11 @@ export default function TaskManagement() {
         </div>
       </main>
       <Toaster position="top-right" />
+      <TaskDetailDialog 
+        task={selectedTask} 
+        open={isDetailDialogOpen} 
+        onOpenChange={setIsDetailDialogOpen} 
+      />
     </div>
   )
 }

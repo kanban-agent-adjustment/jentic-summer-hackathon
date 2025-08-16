@@ -16,12 +16,12 @@ export interface Card {
   order: number
   createdAt: string
   updatedAt: string
-  tags?: string[]
-  completedAt?: string
+  tags: string[]
+  completedAt: string | null
 }
 
 export interface CreateCardRequest {
-  cards: Omit<Card, 'id'>[]
+  cards: Card[]
 }
 
 export interface UpdateCardRequest {
@@ -30,7 +30,7 @@ export interface UpdateCardRequest {
   status?: Card['status']
   order?: number
   tags?: string[]
-  completedAt?: string
+  completedAt?: string | null
 }
 
 // API Client
@@ -85,6 +85,13 @@ class ApiClient {
     })
   }
 
+  async generateCardsWithAgent(prompt: string): Promise<ApiResponse<null>> {
+    return this.request<null>('/api/generate-cards', {
+      method: 'POST',
+      body: JSON.stringify({ prompt }),
+    })
+  }
+
   async updateCard(id: string, updates: UpdateCardRequest): Promise<ApiResponse<Card>> {
     return this.request<Card>(`/api/cards/${id}`, {
       method: 'PUT',
@@ -94,6 +101,12 @@ class ApiClient {
 
   async deleteCard(id: string): Promise<{ message: string }> {
     return this.request<{ message: string }>(`/api/cards/${id}`, {
+      method: 'DELETE',
+    })
+  }
+
+  async deleteAllCards(): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/api/cards', {
       method: 'DELETE',
     })
   }

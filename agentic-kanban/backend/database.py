@@ -78,7 +78,7 @@ class CardDatabase:
                         card_dict['completedAt'] = card.completedAt.isoformat()
                     
                     documents.append(json.dumps(card_dict))
-                    metadatas.append(all_card_dict_fields_to_str(card_dict))
+                    metadatas.append(card_dict)
                     card_ids.append(card.id)
                     
                     logger.debug(f"Prepared card {i} with ID: {card.id}")
@@ -91,10 +91,11 @@ class CardDatabase:
             
             # Add to ChromaDB
             logger.info(f"Adding {len(card_ids)} cards to ChromaDB collection")
-            logger.debug(f"Metadatas: {metadatas}")
+            processed_metadatas = [all_card_dict_fields_to_str(metadata) for metadata in metadatas]
+            logger.debug(f"Processed metadatas: {processed_metadatas}")
             self.collection.add(
                 documents=documents,
-                metadatas=[all_card_dict_fields_to_str(x) for x in metadatas],
+                metadatas=processed_metadatas,
                 ids=card_ids
             )
             
@@ -128,8 +129,16 @@ class CardDatabase:
                             card_data['createdAt'] = datetime.fromisoformat(metadata['createdAt'])
                         if 'updatedAt' in card_data:
                             card_data['updatedAt'] = datetime.fromisoformat(metadata['updatedAt'])
-                        if 'completedAt' in card_data and metadata.get('completedAt'):
-                            card_data['completedAt'] = datetime.fromisoformat(metadata['completedAt'])
+                        # Handle completedAt field - it might be missing, "None", or a valid datetime
+                        if 'completedAt' in metadata and metadata.get('completedAt'):
+                            # Handle legacy "None" strings and new null values
+                            if metadata['completedAt'] != "None" and metadata['completedAt'] is not None:
+                                card_data['completedAt'] = datetime.fromisoformat(metadata['completedAt'])
+                            else:
+                                card_data['completedAt'] = None
+                        else:
+                            # completedAt field is missing or empty - set to None
+                            card_data['completedAt'] = None
                         if 'tags' in card_data:
                             card_data['tags'] = eval(metadata['tags'])
                         
@@ -259,11 +268,16 @@ class CardDatabase:
                 card_data['createdAt'] = datetime.fromisoformat(metadata['createdAt'])
             if 'updatedAt' in card_data:
                 card_data['updatedAt'] = datetime.fromisoformat(metadata['updatedAt'])
-            if 'completedAt' in card_data and metadata.get('completedAt'):
-                if metadata['completedAt'] != "None":
+            # Handle completedAt field - it might be missing, "None", or a valid datetime
+            if 'completedAt' in metadata and metadata.get('completedAt'):
+                # Handle legacy "None" strings and new null values
+                if metadata['completedAt'] != "None" and metadata['completedAt'] is not None:
                     card_data['completedAt'] = datetime.fromisoformat(metadata['completedAt'])
                 else:
                     card_data['completedAt'] = None
+            else:
+                # completedAt field is missing or empty - set to None
+                card_data['completedAt'] = None
             if 'tags' in card_data:
                 card_data['tags'] = eval(metadata['tags'])
             
@@ -295,6 +309,30 @@ class CardDatabase:
             logger.error(traceback.format_exc())
             return False
     
+    def delete_all_cards(self) -> bool:
+        """Delete all cards from the database"""
+        logger.info("Deleting all cards from database")
+        
+        try:
+            # Get all card IDs
+            results = self.collection.get()
+            card_ids = results.get('ids', [])
+            
+            if not card_ids:
+                logger.info("No cards to delete")
+                return True
+            
+            # Delete all cards
+            self.collection.delete(ids=card_ids)
+            logger.info(f"Successfully deleted {len(card_ids)} cards from database")
+            return True
+            
+        except Exception as e:
+            error_msg = f"Failed to delete all cards: {e}"
+            logger.error(error_msg)
+            logger.error(traceback.format_exc())
+            raise RuntimeError(error_msg)
+    
     def get_database_info(self) -> Dict[str, Any]:
         """Get information about the database"""
         try:
@@ -319,11 +357,18 @@ class CardDatabase:
 
 def all_card_dict_fields_to_str(card_dict: Dict[str, Any]) -> Dict[str, Any]:
     """Convert all fields of a card dict to strings"""
+    result = {}
     for key, value in card_dict.items():
         if isinstance(value, datetime):
-            card_dict[key] = value.isoformat()
+            result[key] = value.isoformat()
         elif isinstance(value, list):
-            card_dict[key] = str([str(item) for item in value])
+            result[key] = str([str(item) for item in value])
         elif value is None:
-            card_dict[key] = "None"
-    return card_dict
+            # For nullable fields like completedAt, skip them entirely
+            # ChromaDB doesn't accept None values in metadata
+            if key not in ['completedAt']:
+                result[key] = "None"
+            # Skip completedAt when it's None - don't include it in metadata
+        else:
+            result[key] = str(value)
+    return result

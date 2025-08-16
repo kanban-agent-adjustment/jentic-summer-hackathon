@@ -7,12 +7,14 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
-import { useInitializeData } from "@/hooks/use-initialize-data"
+import { useGenerateCards } from "@/hooks/use-generate-cards"
 import { Send, Bot, Sparkles } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
 
 export default function TaskGenerator() {
   const router = useRouter()
-  const initializeDataMutation = useInitializeData()
+  const generateCardsMutation = useGenerateCards()
+  const { toast } = useToast()
   const [inputValue, setInputValue] = useState("")
   const [isCreatingTasks, setIsCreatingTasks] = useState(false)
 
@@ -21,22 +23,28 @@ export default function TaskGenerator() {
 
     setIsCreatingTasks(true)
 
-    // Create tasks using the API
-    initializeDataMutation.mutate(undefined, {
+    // Generate tasks using Gemini API
+    generateCardsMutation.mutate(inputValue, {
       onSuccess: () => {
-        setTimeout(() => {
-          setIsCreatingTasks(false)
-          router.push('/tasks')
-        }, 1000)
+        toast({
+          title: "Tasks Generated!",
+          description: "Your kanban board has been created with AI-generated tasks.",
+        })
+        // Redirect immediately to tasks page
+        router.push('/tasks')
       },
-      onError: () => {
+      onError: (error) => {
         setIsCreatingTasks(false)
-        // Could add toast notification here if needed
+        toast({
+          title: "Error generating tasks",
+          description: error instanceof Error ? error.message : "Please try again",
+          variant: "destructive",
+        })
       }
     })
   }
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       handleGenerateTasks()
@@ -68,7 +76,7 @@ export default function TaskGenerator() {
               <Input
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
-                onKeyPress={handleKeyPress}
+                onKeyDown={handleKeyDown}
                 placeholder="e.g., Create tasks for a web app project, Organize my marketing campaign..."
                 className="flex-1 text-lg"
                 disabled={isCreatingTasks}
