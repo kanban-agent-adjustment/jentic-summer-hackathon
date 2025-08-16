@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Discovery</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔍 API Discovery</h1>
+            <p class="subtitle">Discover hidden APIs on any website</p>
+        </header>
+
+        <main>
+            <div class="control-section">
+                <button id="startDiscovery" class="btn btn-primary">
+                    <span class="btn-icon">▶️</span>
+                    Start Discovery
+                </button>
+                <button id="stopDiscovery" class="btn btn-secondary" disabled>
+                    <span class="btn-icon">⏹️</span>
+                    Stop Discovery
+                </button>
+            </div>
+
+            <div class="status-section">
+                <div id="status" class="status">
+                    <span class="status-icon">⏳</span>
+                    <span class="status-text">Ready to discover APIs</span>
+                </div>
+                <div id="progress" class="progress hidden">
+                    <div class="progress-bar">
+                        <div class="progress-fill"></div>
+                    </div>
+                    <span class="progress-text">0 requests captured</span>
+                </div>
+            </div>
+
+            <div class="results-section">
+                <h3>Discovered APIs</h3>
+                <div id="apiList" class="api-list">
+                    <div class="empty-state">
+                        <span class="empty-icon">📡</span>
+                        <p>No APIs discovered yet</p>
+                        <p class="empty-hint">Start discovery to capture API calls</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="export-section">
+                <button id="exportOpenAPI" class="btn btn-success" disabled>
+                    <span class="btn-icon">📄</span>
+                    Export OpenAPI Spec
+                </button>
+                <button id="clearResults" class="btn btn-danger" disabled>
+                    <span class="btn-icon">🗑️</span>
+                    Clear Results
+                </button>
+            </div>
+        </main>
+
+        <footer>
+            <div class="info">
+                <span class="version">v1.0.0</span>
+                <span class="separator">•</span>
+                <span class="website">Jentic Hackathon</span>
+            </div>
+        </footer>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html> 

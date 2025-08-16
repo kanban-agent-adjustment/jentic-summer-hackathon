@@ -1,0 +1,747 @@
+/**
+ * Background Script for API Discovery Extension
+ * Monitors network requests and manages extension state
+ */
+
+// Global state
+let isDiscoveryActive = false;
+let discoveredAPIs = [];
+let currentTabId = null;
+
+// Initialize extension
+chrome.runtime.onInstalled.addListener(() => {
+  console.log('🔍 API Discovery Extension installed');
+  resetState();
+});
+
+// Handle messages from popup and content scripts
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('📨 Background received message:', message);
+
+  switch (message.action) {
+    case 'startDiscovery':
+      startDiscovery(message.tabId);
+      sendResponse({ success: true });
+      break;
+      
+    case 'stopDiscovery':
+      stopDiscovery();
+      sendResponse({ success: true });
+      break;
+      
+    case 'getState':
+      sendResponse({
+        isDiscoveryActive,
+        discoveredAPIs,
+        currentTabId
+      });
+      break;
+      
+    case 'clearResults':
+      clearResults();
+      sendResponse({ success: true });
+      break;
+      
+    case 'generateOpenAPI':
+      generateOpenAPISpec().then(spec => {
+        sendResponse({ success: true, spec });
+      }).catch(error => {
+        sendResponse({ success: false, error: error.message });
+      });
+      return true; // Keep message channel open for async response
+      
+    case 'apiDiscovered':
+      handleAPIDiscovered(message.api);
+      sendResponse({ success: true });
+      break;
+      
+    case 'userInteraction':
+      handleUserInteraction(message.interaction);
+      sendResponse({ success: true });
+      break;
+      
+    case 'fetchRequest':
+      handleFetchRequest(message.request);
+      sendResponse({ success: true });
+      break;
+      
+    case 'xhrRequest':
+      handleXHRRequest(message.request);
+      sendResponse({ success: true });
+      break;
+      
+    default:
+      console.log('Unknown message action:', message.action);
+      sendResponse({ success: false, error: 'Unknown action' });
+  }
+});
+
+// Start API discovery
+function startDiscovery(tabId) {
+  console.log('🚀 Starting API discovery for tab:', tabId);
+  
+  isDiscoveryActive = true;
+  currentTabId = tabId;
+  discoveredAPIs = [];
+  
+  // Notify popup
+  notifyPopup('discoveryStatus', { isActive: true });
+  
+  // Inject content script if not already injected
+  chrome.scripting.executeScript({
+    target: { tabId },
+    files: ['src/content/content.js']
+  }).catch(error => {
+    console.log('Content script already injected or error:', error);
+  });
+}
+
+// Stop API discovery
+function stopDiscovery() {
+  console.log('⏹️ Stopping API discovery');
+  
+  isDiscoveryActive = false;
+  currentTabId = null;
+  
+  // Notify popup
+  notifyPopup('discoveryStatus', { isActive: false });
+  
+  // Save results to storage
+  chrome.storage.local.set({
+    discoveredAPIs,
+    lastDiscovery: Date.now()
+  });
+}
+
+// Handle newly discovered API
+function handleAPIDiscovered(api) {
+  if (!isDiscoveryActive) return;
+  
+  // Check if API already exists
+  const existingIndex = discoveredAPIs.findIndex(existing => 
+    existing.method === api.method && existing.url === api.url
+  );
+  
+  if (existingIndex >= 0) {
+    // Update existing API with new data
+    discoveredAPIs[existingIndex] = {
+      ...discoveredAPIs[existingIndex],
+      ...api,
+      count: (discoveredAPIs[existingIndex].count || 1) + 1,
+      lastSeen: Date.now()
+    };
+  } else {
+    // Add new API
+    const newAPI = {
+      ...api,
+      id: generateId(),
+      discoveredAt: Date.now(),
+      count: 1
+    };
+    discoveredAPIs.push(newAPI);
+  }
+  
+  // Notify popup
+  notifyPopup('apiDiscovered', {
+    api: discoveredAPIs[existingIndex >= 0 ? existingIndex : discoveredAPIs.length - 1],
+    totalCount: discoveredAPIs.length
+  });
+}
+
+// Clear all results
+function clearResults() {
+  discoveredAPIs = [];
+  chrome.storage.local.remove(['discoveredAPIs', 'lastDiscovery']);
+  notifyPopup('resultsCleared', {});
+}
+
+// Generate OpenAPI specification
+async function generateOpenAPISpec() {
+  if (discoveredAPIs.length === 0) {
+    throw new Error('No APIs discovered yet');
+  }
+  
+  // Use a simple OpenAPI generator instead of importing
+  return generateSimpleOpenAPISpec(discoveredAPIs);
+}
+
+// Simple OpenAPI generator for Service Worker
+function generateSimpleOpenAPISpec(apis) {
+  if (!apis || apis.length === 0) {
+    throw new Error('No APIs provided for OpenAPI generation');
+  }
+  
+  // Extract base URL
+  let baseUrl = 'https://api.example.com';
+  if (apis.length > 0) {
+    try {
+      const url = new URL(apis[0].url);
+      baseUrl = `${url.protocol}//${url.hostname}`;
+    } catch (error) {
+      console.log('Error extracting base URL:', error);
+    }
+  }
+  
+  // Generate basic OpenAPI structure
+  const spec = {
+    openapi: '3.0.3',
+    info: {
+      title: `${new URL(baseUrl).hostname} API`,
+      description: `Auto-generated OpenAPI specification for ${baseUrl}.\n\n## Discovery Summary\n- **Total Endpoints**: ${apis.length}\n- **Generated by**: API Discovery Chrome Extension`,
+      version: '1.0.0',
+      contact: {
+        name: 'API Discovery Extension',
+        url: 'https://github.com/jentic-hackathon/chrome-extension-api-discovery'
+      }
+    },
+    servers: [
+      {
+        url: baseUrl,
+        description: 'Base URL for API endpoints'
+      }
+    ],
+    paths: generatePaths(apis),
+    components: {
+      securitySchemes: generateSecuritySchemes(apis),
+      schemas: {
+        Error: {
+          type: 'object',
+          properties: {
+            error: {
+              type: 'string',
+              description: 'Error message'
+            }
+          }
+        }
+      }
+    }
+  };
+  
+  return JSON.stringify(spec, null, 2);
+}
+
+// Generate paths section
+function generatePaths(apis) {
+  const paths = {};
+  
+  // Group APIs by normalized path
+  const pathGroups = groupAPIsByPath(apis);
+  
+  pathGroups.forEach(group => {
+    const path = group.path;
+    const pathItem = generatePathItem(group.apis);
+    
+    if (pathItem) {
+      paths[path] = pathItem;
+    }
+  });
+  
+  return paths;
+}
+
+// Group APIs by normalized path
+function groupAPIsByPath(apis) {
+  const groups = new Map();
+  
+  apis.forEach(api => {
+    try {
+      const url = new URL(api.url);
+      const path = normalizePath(url.pathname);
+      
+      if (!groups.has(path)) {
+        groups.set(path, {
+          path,
+          apis: []
+        });
+      }
+      
+      groups.get(path).apis.push(api);
+    } catch (error) {
+      console.log('Error grouping API by path:', error);
+    }
+  });
+  
+  return Array.from(groups.values());
+}
+
+// Normalize path by replacing IDs with parameters
+function normalizePath(path) {
+  const segments = path.split('/');
+  
+  return segments.map(segment => {
+    // Replace numeric IDs
+    if (segment.match(/^\d+$/)) {
+      return '{id}';
+    }
+    // Replace UUIDs
+    if (segment.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+      return '{uuid}';
+    }
+    // Replace other ID patterns
+    if (segment.match(/^[0-9a-f]{8,}$/i)) {
+      return '{id}';
+    }
+    return segment;
+  }).join('/');
+}
+
+// Generate path item for a group of APIs
+function generatePathItem(apis) {
+  const pathItem = {};
+  
+  // Group by HTTP method
+  const methodGroups = groupAPIsByMethod(apis);
+  
+  Object.entries(methodGroups).forEach(([method, methodAPIs]) => {
+    const operation = generateOperation(method, methodAPIs);
+    if (operation) {
+      pathItem[method.toLowerCase()] = operation;
+    }
+  });
+  
+  return Object.keys(pathItem).length > 0 ? pathItem : null;
+}
+
+// Group APIs by HTTP method
+function groupAPIsByMethod(apis) {
+  const groups = {};
+  
+  apis.forEach(api => {
+    const method = api.method.toLowerCase();
+    if (!groups[method]) {
+      groups[method] = [];
+    }
+    groups[method].push(api);
+  });
+  
+  return groups;
+}
+
+// Generate operation object
+function generateOperation(method, apis) {
+  const api = apis[0]; // Use first API as template
+  const successResponses = apis.filter(a => a.statusCode >= 200 && a.statusCode < 300);
+  const errorResponses = apis.filter(a => a.statusCode >= 400);
+  
+  const operation = {
+    summary: generateOperationSummary(method, api),
+    description: `This endpoint was discovered ${apis.length} time(s).`,
+    operationId: generateOperationId(method, api),
+    parameters: generateParameters(api),
+    responses: generateResponses(successResponses, errorResponses)
+  };
+  
+  // Add request body for POST/PUT/PATCH
+  if (['post', 'put', 'patch'].includes(method)) {
+    operation.requestBody = {
+      required: true,
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            description: 'Request payload'
+          }
+        }
+      }
+    };
+  }
+  
+  return operation;
+}
+
+// Generate operation summary
+function generateOperationSummary(method, api) {
+  const path = api.path;
+  const segments = path.split('/').filter(s => s.length > 0);
+  
+  switch (method) {
+    case 'get':
+      if (segments.includes('{id}')) {
+        return `Get ${segments[segments.length - 2] || 'item'} by ID`;
+      }
+      return `Get ${segments[segments.length - 1] || 'items'}`;
+    case 'post':
+      return `Create ${segments[segments.length - 1] || 'item'}`;
+    case 'put':
+      return `Update ${segments[segments.length - 2] || 'item'} by ID`;
+    case 'patch':
+      return `Partially update ${segments[segments.length - 2] || 'item'} by ID`;
+    case 'delete':
+      return `Delete ${segments[segments.length - 2] || 'item'} by ID`;
+    default:
+      return `${method.toUpperCase()} ${path}`;
+  }
+}
+
+// Generate operation ID
+function generateOperationId(method, api) {
+  const path = api.path;
+  const segments = path.split('/').filter(s => s.length > 0);
+  
+  let resource = segments[segments.length - 1] || 'item';
+  if (resource.includes('{')) {
+    resource = segments[segments.length - 2] || 'item';
+  }
+  
+  return `${method}${resource.charAt(0).toUpperCase() + resource.slice(1)}`;
+}
+
+// Generate parameters
+function generateParameters(api) {
+  const parameters = [];
+  
+  try {
+    const url = new URL(api.url);
+    const path = url.pathname;
+    const segments = path.split('/');
+    
+    // Path parameters
+    segments.forEach((segment, index) => {
+      if (segment.includes('{') || segment.match(/^\d+$/) || segment.match(/^[0-9a-f]{8,}$/i)) {
+        parameters.push({
+          name: segment.replace(/[{}]/g, ''),
+          in: 'path',
+          required: true,
+          schema: {
+            type: 'string',
+            description: 'Resource identifier'
+          }
+        });
+      }
+    });
+    
+    // Query parameters
+    url.searchParams.forEach((value, key) => {
+      parameters.push({
+        name: key,
+        in: 'query',
+        required: false,
+        schema: {
+          type: 'string',
+          description: `Query parameter: ${key}`
+        }
+      });
+    });
+    
+  } catch (error) {
+    console.log('Error generating parameters:', error);
+  }
+  
+  return parameters;
+}
+
+// Generate responses
+function generateResponses(successResponses, errorResponses) {
+  const responses = {};
+  
+  // Success responses
+  if (successResponses.length > 0) {
+    const successCodes = [...new Set(successResponses.map(r => r.statusCode))];
+    
+    successCodes.forEach(code => {
+      responses[code] = {
+        description: getStatusDescription(code),
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              description: 'Response data'
+            }
+          }
+        }
+      };
+    });
+  } else {
+    // Default success response
+    responses['200'] = {
+      description: 'Successful response',
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            description: 'Response data'
+          }
+        }
+      }
+    };
+  }
+  
+  // Error responses
+  const errorCodes = [...new Set(errorResponses.map(r => r.statusCode))];
+  errorCodes.forEach(code => {
+    responses[code] = {
+      description: getStatusDescription(code),
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              error: {
+                type: 'string',
+                description: 'Error message'
+              }
+            }
+          }
+        }
+      }
+    };
+  });
+  
+  return responses;
+}
+
+// Generate security schemes
+function generateSecuritySchemes(apis) {
+  const schemes = {};
+  
+  // Check for Bearer token
+  const hasBearer = apis.some(api => 
+    (api.requestHeaders || []).some(h => 
+      h.name.toLowerCase() === 'authorization' && 
+      h.value.toLowerCase().startsWith('bearer ')
+    )
+  );
+  
+  if (hasBearer) {
+    schemes.bearerAuth = {
+      type: 'http',
+      scheme: 'bearer',
+      bearerFormat: 'JWT'
+    };
+  }
+  
+  // Check for API key
+  const hasApiKey = apis.some(api => 
+    (api.requestHeaders || []).some(h => 
+      h.name.toLowerCase().includes('key') ||
+      h.name.toLowerCase().includes('token')
+    )
+  );
+  
+  if (hasApiKey) {
+    schemes.apiKeyAuth = {
+      type: 'apiKey',
+      in: 'header',
+      name: 'X-API-Key'
+    };
+  }
+  
+  return schemes;
+}
+
+// Get HTTP status description
+function getStatusDescription(code) {
+  const descriptions = {
+    200: 'OK',
+    201: 'Created',
+    204: 'No Content',
+    400: 'Bad Request',
+    401: 'Unauthorized',
+    403: 'Forbidden',
+    404: 'Not Found',
+    409: 'Conflict',
+    422: 'Unprocessable Entity',
+    429: 'Too Many Requests',
+    500: 'Internal Server Error',
+    502: 'Bad Gateway',
+    503: 'Service Unavailable'
+  };
+  
+  return descriptions[code] || `HTTP ${code}`;
+}
+
+// Reset extension state
+function resetState() {
+  isDiscoveryActive = false;
+  discoveredAPIs = [];
+  currentTabId = null;
+}
+
+// Notify popup with data
+function notifyPopup(action, data) {
+  chrome.runtime.sendMessage({
+    action,
+    ...data
+  }).catch(error => {
+    // Popup might be closed, ignore error
+    console.log('Popup notification failed:', error);
+  });
+}
+
+// Handle user interactions from content script
+function handleUserInteraction(interaction) {
+  if (!isDiscoveryActive) return;
+  
+  console.log('👤 User interaction:', interaction.type);
+  
+  // Store interaction for context
+  if (!window.userInteractions) {
+    window.userInteractions = [];
+  }
+  window.userInteractions.push(interaction);
+}
+
+// Handle fetch requests from content script
+function handleFetchRequest(request) {
+  if (!isDiscoveryActive) return;
+  
+  // Check if this looks like an API request
+  if (isAPIRequestFromContent(request)) {
+    const api = {
+      method: request.method,
+      url: request.url,
+      timestamp: request.timestamp,
+      type: 'fetch',
+      source: 'content_script'
+    };
+    
+    // Try to extract more info from URL
+    try {
+      const url = new URL(request.url);
+      api.path = url.pathname;
+      api.hostname = url.hostname;
+    } catch (error) {
+      console.log('Invalid URL in fetch request:', request.url);
+    }
+    
+    handleAPIDiscovered(api);
+  }
+}
+
+// Handle XHR requests from content script
+function handleXHRRequest(request) {
+  if (!isDiscoveryActive) return;
+  
+  // Check if this looks like an API request
+  if (isAPIRequestFromContent(request)) {
+    const api = {
+      method: request.method,
+      url: request.url,
+      timestamp: request.timestamp,
+      type: 'xhr',
+      source: 'content_script'
+    };
+    
+    // Try to extract more info from URL
+    try {
+      const url = new URL(request.url);
+      api.path = url.pathname;
+      api.hostname = url.hostname;
+    } catch (error) {
+      console.log('Invalid URL in XHR request:', request.url);
+    }
+    
+    handleAPIDiscovered(api);
+  }
+}
+
+// Check if request from content script is likely an API
+function isAPIRequestFromContent(request) {
+  const url = request.url.toLowerCase();
+  
+  // Skip static assets
+  const staticExtensions = ['.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.woff', '.woff2', '.ttf'];
+  if (staticExtensions.some(ext => url.includes(ext))) {
+    return false;
+  }
+  
+  // Check for API indicators
+  const apiIndicators = [
+    '/api/',
+    '/rest/',
+    '/graphql',
+    '/v1/',
+    '/v2/',
+    '/v3/',
+    'application/json',
+    'application/xml'
+  ];
+  
+  return apiIndicators.some(indicator => url.includes(indicator));
+}
+
+// Generate unique ID
+function generateId() {
+  return Date.now().toString(36) + Math.random().toString(36).substr(2);
+}
+
+// Monitor network requests
+chrome.webRequest.onCompleted.addListener(
+  (details) => {
+    if (!isDiscoveryActive) return;
+    
+    // Filter for API-like requests
+    if (isAPIRequest(details)) {
+      const api = extractAPIInfo(details);
+      handleAPIDiscovered(api);
+    }
+  },
+  { urls: ["<all_urls>"] },
+  ["responseHeaders"]
+);
+
+// Check if request is likely an API call
+function isAPIRequest(details) {
+  // Skip static assets
+  const staticExtensions = ['.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.woff', '.woff2', '.ttf'];
+  const url = details.url.toLowerCase();
+  
+  if (staticExtensions.some(ext => url.includes(ext))) {
+    return false;
+  }
+  
+  // Check for API indicators
+  const apiIndicators = [
+    '/api/',
+    '/rest/',
+    '/graphql',
+    '/v1/',
+    '/v2/',
+    '/v3/',
+    'application/json',
+    'application/xml'
+  ];
+  
+  // Check URL patterns
+  if (apiIndicators.some(indicator => url.includes(indicator))) {
+    return true;
+  }
+  
+  // Check response headers
+  if (details.responseHeaders) {
+    const contentType = details.responseHeaders.find(h => 
+      h.name.toLowerCase() === 'content-type'
+    );
+    
+    if (contentType && (
+      contentType.value.includes('application/json') ||
+      contentType.value.includes('application/xml')
+    )) {
+      return true;
+    }
+  }
+  
+  // Check for AJAX patterns (XHR/Fetch)
+  if (details.type === 'xmlhttprequest') {
+    return true;
+  }
+  
+  return false;
+}
+
+// Extract API information from request details
+function extractAPIInfo(details) {
+  const url = new URL(details.url);
+  
+  return {
+    method: details.method,
+    url: details.url,
+    path: url.pathname,
+    hostname: url.hostname,
+    statusCode: details.statusCode,
+    timestamp: details.timeStamp,
+    type: details.type,
+    requestHeaders: details.requestHeaders || [],
+    responseHeaders: details.responseHeaders || []
+  };
+}
